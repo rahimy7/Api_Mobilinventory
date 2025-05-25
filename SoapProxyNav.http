@@ -1,0 +1,6 @@
+@SoapProxyNav_HostAddress = http://localhost:5193
+
+GET {{SoapProxyNav_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
