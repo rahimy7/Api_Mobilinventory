@@ -31,3 +31,4 @@ C:\Users\Rahimy\Desktop\back\SoapProxyNav\obj\Debug\net8.0\refint\SoapProxyNav.d
 C:\Users\Rahimy\Desktop\back\SoapProxyNav\obj\Debug\net8.0\SoapProxyNav.pdb
 C:\Users\Rahimy\Desktop\back\SoapProxyNav\obj\Debug\net8.0\SoapProxyNav.genruntimeconfig.cache
 C:\Users\Rahimy\Desktop\back\SoapProxyNav\obj\Debug\net8.0\ref\SoapProxyNav.dll
+C:\Users\Rahimy\Desktop\back\SoapProxyNav\obj\Debug\net8.0\SoapProxyNav.sourcelink.json
