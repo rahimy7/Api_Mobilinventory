@@ -1,11 +1,12 @@
 {
   "Version": 1,
-  "Hash": "Q2ExlBUfYq5dKatjpuitWASJJ1X7GRzH0Bgwu+Tfwpk=",
+  "Hash": "DnOT5cODy9w+2G/k3OHO4uLzKr4x0Gwda41+cHcczWE=",
   "Source": "SoapProxyNav",
   "BasePath": "_content/SoapProxyNav",
   "Mode": "Default",
   "ManifestType": "Build",
   "ReferencedProjectsConfiguration": [],
   "DiscoveryPatterns": [],
-  "Assets": []
+  "Assets": [],
+  "Endpoints": []
 }
