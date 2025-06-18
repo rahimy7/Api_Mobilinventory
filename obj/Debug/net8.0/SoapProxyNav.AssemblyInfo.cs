@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SoapProxyNav")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c211bb92178896a7b7cefb4800fdaf902262afb5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+acf75c44a864102380fe70e2099942197bd63a3e")]
 [assembly: System.Reflection.AssemblyProductAttribute("SoapProxyNav")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SoapProxyNav")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
