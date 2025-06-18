@@ -4,8 +4,15 @@ public static class XmlToJsonConverter
 {
     public static object ConvertXmlToDynamicJson(string xml)
     {
-        var doc = XDocument.Parse(xml);
-        return ConvertElement(doc.Root!);
+        try
+        {
+            var doc = XDocument.Parse(xml);
+            return ConvertElement(doc.Root!);
+        }
+        catch (System.Exception)
+        {
+            return xml;
+        }
     }
 
     private static object ConvertElement(XElement element)

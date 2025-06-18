@@ -6,6 +6,12 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Aquí configuras Kestrel para que escuche en cualquier IP (0.0.0.0)
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.ListenAnyIP(5000); // Puerto que usarás en AWS
+});
+
 builder.Services
     .AddHttpClient("nav")
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -21,6 +27,8 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 {
     try
     {
+        var time = DateTime.Now;
+        Console.WriteLine($"Peticion/nav-soap: {time}");
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
         // Console.WriteLine("Raw JSON Request:\n" + body);
@@ -120,6 +128,9 @@ app.MapPost("/retail-services/{operation}", async (
 {
     try
     {
+        var time = DateTime.Now;
+        Console.WriteLine($"Peticion/retail-services/operation: {time}");
+
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
 
@@ -169,6 +180,8 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
 {
     try
     {
+        var time = DateTime.Now;
+        Console.WriteLine($"Peticion/nav-health: {time}");
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
 
