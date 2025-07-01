@@ -10,6 +10,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.ListenAnyIP(5000); // Puerto que usarás en AWS
+    serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
+    serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(300);
 });
 
 builder.Services
@@ -31,30 +33,25 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         Console.WriteLine($"Peticion/nav-soap: {time}");
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
-        // Console.WriteLine("Raw JSON Request:\n" + body);
 
         var json = System.Text.Json.JsonSerializer.Deserialize<NavSoapRequest>(body);
 
-        if (json is null || string.IsNullOrWhiteSpace(json.serviceUrl) ||
-            string.IsNullOrWhiteSpace(json.usuario) ||
-            string.IsNullOrWhiteSpace(json.password) ||
-            string.IsNullOrWhiteSpace(json.dominio) ||
-            string.IsNullOrWhiteSpace(json.operation) ||
+        if (json is null || string.IsNullOrWhiteSpace(json.operation) ||
             json.parameters is null)
         {
             return Results.BadRequest("Faltan datos requeridos: serviceUrl, usuario, password, dominio, operation, parameters");
         }
 
-        // Console.WriteLine($"Calling NAV Service: {json.serviceUrl}");
-        // Console.WriteLine($"Operation: {json.operation}");
-
         // Crear el cliente con credenciales dinámicas
         var handler = new HttpClientHandler
         {
-            Credentials = new NetworkCredential(json.usuario, json.password, json.dominio),
+            Credentials = new NetworkCredential(json.usuario ?? JsonConstants.usuario, json.password ?? JsonConstants.password, json.dominio ?? JsonConstants.dominio),
             ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
         };
-        var client = new HttpClient(handler);
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(6000)
+        };
 
         // Construir los parámetros del SOAP
         var parametersXml = new StringBuilder();
@@ -64,7 +61,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         }
 
         // Determinar el namespace basado en la URL del servicio
-        var serviceName = ExtractServiceNameFromUrl(json.serviceUrl);
+        var serviceName = ExtractServiceNameFromUrl(json.serviceUrl ?? JsonConstants.serviceUrl);
         var nameSpace = $"urn:microsoft-dynamics-schemas/codeunit/{serviceName}";
         var soapAction = $"{nameSpace}:{json.operation}";
 
@@ -81,10 +78,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         </soap:Envelope>
         """;
 
-        // Console.WriteLine("SOAP Envelope:");
-        // Console.WriteLine(soapEnvelope);
-
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, json.serviceUrl)
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, json.serviceUrl ?? JsonConstants.serviceUrl)
         {
             Content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml")
         };
@@ -93,9 +87,6 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 
         var navResponse = await client.SendAsync(httpRequest);
         var rawXml = await navResponse.Content.ReadAsStringAsync();
-
-        // Console.WriteLine("NAV Response:");
-        // Console.WriteLine(rawXml);
 
         if (!navResponse.IsSuccessStatusCode)
         {
@@ -136,14 +127,6 @@ app.MapPost("/retail-services/{operation}", async (
 
         var json = System.Text.Json.JsonSerializer.Deserialize<RetailServiceRequest>(body);
 
-        if (json is null || string.IsNullOrWhiteSpace(json.serviceUrl) ||
-            string.IsNullOrWhiteSpace(json.usuario) ||
-            string.IsNullOrWhiteSpace(json.password) ||
-            string.IsNullOrWhiteSpace(json.dominio))
-        {
-            return Results.BadRequest("Faltan credenciales requeridas");
-        }
-
         // Validar que la operación sea válida para RetailWebServices
         var validOperations = new[] {
             "WebRequest", "CreateResponseCode", "GetPosImage", "GetPosHtml",
@@ -158,12 +141,13 @@ app.MapPost("/retail-services/{operation}", async (
         }
 
         var navRequest = new NavSoapRequest(
-            json.serviceUrl,
-            json.usuario,
-            json.password,
-            json.dominio,
-            operation,
-            json.parameters ?? new Dictionary<string, string>()
+            serviceUrl: json.serviceUrl ?? JsonConstants.serviceUrl,
+            usuario: json.usuario ?? JsonConstants.usuario,
+            password: json.password ?? JsonConstants.password,
+            dominio: json.dominio ?? JsonConstants.dominio,
+            operation: operation,
+            timeout: json.timeout ?? 30000,
+            parameters: json.parameters ?? new Dictionary<string, string>()
         );
 
         // Reutilizar la lógica del endpoint genérico
@@ -187,22 +171,17 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
 
         var json = System.Text.Json.JsonSerializer.Deserialize<NavHealthRequest>(body);
 
-        if (json is null || string.IsNullOrWhiteSpace(json.serviceUrl))
-        {
-            return Results.BadRequest("Se requiere serviceUrl");
-        }
-
         var navRequest = new NavSoapRequest(
-            json.serviceUrl,
-            json.usuario ?? "",
-            json.password ?? "",
-            json.dominio ?? "",
-            "IsOnline",
-            new Dictionary<string, string>()
+            serviceUrl: json.serviceUrl ?? JsonConstants.serviceUrl,
+            usuario: json.usuario ?? JsonConstants.usuario,
+            password: json.password ?? JsonConstants.password,
+            dominio: json.dominio ?? JsonConstants.dominio,
+            operation: "IsOnline",
+            timeout: json.timeout ?? JsonConstants.timeout,
+            parameters: new Dictionary<string, string>()
         );
 
         var result = await CallNavSoapService(navRequest, factory);
-        // Console.WriteLine($"HEALTH resultl: {result}");
         return result;
     }
     catch (Exception ex)
@@ -247,7 +226,7 @@ static object ParseSoapResponse(string soapXml, string operation)
             var result = new Dictionary<string, object>();
             foreach (var element in responseElement.Elements())
             {
-                result[element.Name.LocalName] = XmlToJsonConverter.ConvertXmlToDynamicJson(element.Value);
+                result[element.Name.LocalName] = element.Value; //XmlToJsonConverter.ConvertXmlToDynamicJson(element.Value);
             }
             return result;
         }
@@ -269,7 +248,11 @@ static async Task<IResult> CallNavSoapService(NavSoapRequest navRequest, IHttpCl
         Credentials = new NetworkCredential(navRequest.usuario, navRequest.password, navRequest.dominio),
         ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
     };
-    var client = new HttpClient(handler);
+
+    var client = new HttpClient(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(6000)
+    };
 
     var parametersXml = new StringBuilder();
     foreach (var param in navRequest.parameters)
@@ -325,6 +308,7 @@ record NavSoapRequest(
     string password,
     string dominio,
     string operation,
+    double? timeout,
     Dictionary<string, string> parameters
 );
 
@@ -333,6 +317,7 @@ record RetailServiceRequest(
     string usuario,
     string password,
     string dominio,
+    double? timeout,
     Dictionary<string, string>? parameters
 );
 
@@ -340,5 +325,6 @@ record NavHealthRequest(
     string serviceUrl,
     string? usuario,
     string? password,
-    string? dominio
+    string? dominio,
+    double? timeout
 );
