@@ -1,0 +1,40 @@
+# Build Folders
+bin/
+obj/
+publish/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+
+# Rider
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Logs
+*.log
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+packages/
+
+# Compiled DLLs
+*.dll
+*.exe
+
+# Publish outputs
+**/publish/
+
+# dotnet secrets
+secrets.json

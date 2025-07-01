@@ -17,6 +17,7 @@ public static class XmlToJsonConverter
 
     private static object ConvertElement(XElement element)
     {
+        // Si no tiene elementos hijos ni atributos, devolver solo el valor
         if (!element.HasElements && element.Attributes().Count() == 0)
             return element.Value;
 
@@ -25,15 +26,29 @@ public static class XmlToJsonConverter
         // Agregar atributos si existen
         foreach (var attr in element.Attributes())
         {
-            dict[$"@{attr.Name.LocalName}"] = attr.Value;
+            if (attr.Name.LocalName.Contains("Options"))
+                dict[$"{attr.Name.LocalName}"] = attr.Value.Split(',');
+            else dict[$"{attr.Name.LocalName}"] = attr.Value;
         }
 
-        // Agrupar hijos por nombre para manejar listas
-        var grouped = element.Elements().GroupBy(e => e.Name.LocalName);
-        foreach (var group in grouped)
+        // Si tiene elementos hijos, procesarlos
+        if (element.HasElements)
         {
-            var elements = group.Select(ConvertElement).ToList();
-            dict[group.Key] = elements.Count == 1 ? elements.First() : elements;
+            // Agrupar hijos por nombre para manejar listas
+            var grouped = element.Elements().GroupBy(e => e.Name.LocalName);
+            foreach (var group in grouped)
+            {
+                var elements = group.Select(ConvertElement).ToList();
+                dict[group.Key] = elements.Count == 1 ? elements.First() : elements;
+            }
+        }
+        else
+        {
+            // Si no tiene elementos hijos pero sí tiene valor de texto, agregarlo
+            if (!string.IsNullOrEmpty(element.Value))
+            {
+                dict["value"] = element.Value;
+            }
         }
 
         return dict;
