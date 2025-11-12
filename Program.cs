@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.ListenAnyIP(5000); // Puerto que usarás en AWS
+    serverOptions.Limits.MaxRequestBodySize = 52428800;
     serverOptions.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(300);
 });
@@ -22,6 +23,9 @@ builder.Services
         ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
     });
 
+// IMPORTANTE: Inicializar JsonConstants DESPUÉS de crear el builder
+JsonConstants.Initialize(builder.Configuration);
+
 var app = builder.Build();
 
 // Endpoint genérico para cualquier servicio SOAP de NAV
@@ -29,8 +33,9 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 {
     try
     {
-        var time = DateTime.Now;
-        Console.WriteLine($"Peticion/nav-soap: {time}");
+        var time = $"Entrada: {DateTime.Now}";
+
+        // Console.WriteLine($"Peticion/nav-soap: {time}");
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
 
@@ -45,7 +50,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         // Crear el cliente con credenciales dinámicas
         var handler = new HttpClientHandler
         {
-            Credentials = new NetworkCredential(json.usuario ?? JsonConstants.usuario, json.password ?? JsonConstants.password, json.dominio ?? JsonConstants.dominio),
+            Credentials = new NetworkCredential(json.usuario ?? JsonConstants.Usuario, json.password ?? JsonConstants.Password, json.dominio ?? JsonConstants.Dominio),
             ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
         };
         var client = new HttpClient(handler)
@@ -55,13 +60,18 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 
         // Construir los parámetros del SOAP
         var parametersXml = new StringBuilder();
+        var peticion = "";
         foreach (var param in json.parameters)
         {
             parametersXml.AppendLine($"<{param.Key}>{System.Security.SecurityElement.Escape(param.Value)}</{param.Key}>");
+            peticion += $"{param.Value}, ";
         }
 
+        // Console.WriteLine($"JSON: ${json}");
+
+
         // Determinar el namespace basado en la URL del servicio
-        var serviceName = ExtractServiceNameFromUrl(json.serviceUrl ?? JsonConstants.serviceUrl);
+        var serviceName = ExtractServiceNameFromUrl(json.serviceUrl ?? JsonConstants.ServiceUrl);
         var nameSpace = $"urn:microsoft-dynamics-schemas/codeunit/{serviceName}";
         var soapAction = $"{nameSpace}:{json.operation}";
 
@@ -78,15 +88,22 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         </soap:Envelope>
         """;
 
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, json.serviceUrl ?? JsonConstants.serviceUrl)
+        Console.WriteLine($"xml:{soapEnvelope}");
+
+
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, json.serviceUrl ?? JsonConstants.ServiceUrl)
         {
             Content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml")
         };
 
         httpRequest.Headers.Add("SOAPAction", $"\"{soapAction}\"");
 
+        // time += $" - Entrada SendAsync: {DateTime.Now}";
         var navResponse = await client.SendAsync(httpRequest);
+        // time += $" - Salida SendAsync: {DateTime.Now}";
         var rawXml = await navResponse.Content.ReadAsStringAsync();
+        // time += $" - Salida ReadAsStringAsync: {DateTime.Now}";
+
 
         if (!navResponse.IsSuccessStatusCode)
         {
@@ -95,6 +112,10 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 
         // Parsear la respuesta y extraer el resultado
         var result = ParseSoapResponse(rawXml, json.operation);
+        time += $" - Salida: {DateTime.Now}";
+
+        Console.WriteLine($"{peticion}{time}");
+
         // var result = XmlToJsonConverter.ConvertXmlToDynamicJson(result2);
 
         return Results.Ok(new
@@ -141,10 +162,10 @@ app.MapPost("/retail-services/{operation}", async (
         }
 
         var navRequest = new NavSoapRequest(
-            serviceUrl: json.serviceUrl ?? JsonConstants.serviceUrl,
-            usuario: json.usuario ?? JsonConstants.usuario,
-            password: json.password ?? JsonConstants.password,
-            dominio: json.dominio ?? JsonConstants.dominio,
+            serviceUrl: json.serviceUrl ?? JsonConstants.ServiceUrl,
+            usuario: json.usuario ?? JsonConstants.Usuario,
+            password: json.password ?? JsonConstants.Password,
+            dominio: json.dominio ?? JsonConstants.Dominio,
             operation: operation,
             timeout: json.timeout ?? 30000,
             parameters: json.parameters ?? new Dictionary<string, string>()
@@ -164,6 +185,11 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
 {
     try
     {
+        Console.WriteLine(JsonConstants.ServiceUrl);
+        Console.WriteLine(JsonConstants.Usuario);
+        Console.WriteLine(JsonConstants.Password);
+        Console.WriteLine(JsonConstants.Dominio);
+        Console.WriteLine(JsonConstants.Timeout);
         var time = DateTime.Now;
         Console.WriteLine($"Peticion/nav-health: {time}");
         using var reader = new StreamReader(request.Body);
@@ -172,12 +198,12 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
         var json = System.Text.Json.JsonSerializer.Deserialize<NavHealthRequest>(body);
 
         var navRequest = new NavSoapRequest(
-            serviceUrl: json.serviceUrl ?? JsonConstants.serviceUrl,
-            usuario: json.usuario ?? JsonConstants.usuario,
-            password: json.password ?? JsonConstants.password,
-            dominio: json.dominio ?? JsonConstants.dominio,
+            serviceUrl: json.serviceUrl ?? JsonConstants.ServiceUrl,
+            usuario: json.usuario ?? JsonConstants.Usuario,
+            password: json.password ?? JsonConstants.Password,
+            dominio: json.dominio ?? JsonConstants.Dominio,
             operation: "IsOnline",
-            timeout: json.timeout ?? JsonConstants.timeout,
+            timeout: json.timeout ?? JsonConstants.Timeout,
             parameters: new Dictionary<string, string>()
         );
 
@@ -226,7 +252,7 @@ static object ParseSoapResponse(string soapXml, string operation)
             var result = new Dictionary<string, object>();
             foreach (var element in responseElement.Elements())
             {
-                result[element.Name.LocalName] = element.Value; //XmlToJsonConverter.ConvertXmlToDynamicJson(element.Value);
+                result[element.Name.LocalName] = XmlToJsonConverter.ConvertXmlToDynamicJson(element.Value);
             }
             return result;
         }
@@ -328,3 +354,23 @@ record NavHealthRequest(
     string? dominio,
     double? timeout
 );
+
+
+// SOLUCIÓN 1: Clase estática que se inicializa
+public static class JsonConstants
+{
+    public static string ServiceUrl { get; private set; } = string.Empty;
+    public static string Usuario { get; private set; } = string.Empty;
+    public static string Password { get; private set; } = string.Empty;
+    public static string Dominio { get; private set; } = string.Empty;
+    public static double Timeout { get; private set; }
+
+    public static void Initialize(IConfiguration configuration)
+    {
+        ServiceUrl = configuration["DatabaseSettings:ServerUrl"] ?? "https://beta.innovacentro.com.do:18597/SANA-TEST/WS/La%20Innovacion%20SRL/Codeunit/RetailWebServices";
+        Usuario = configuration["DatabaseSettings:Username"] ?? "jrodriguez";
+        Password = configuration["DatabaseSettings:Password"] ?? "Volumen1";
+        Dominio = configuration["DatabaseSettings:Domain"] ?? "MONTECARLO_DB";
+        Timeout = configuration.GetValue<double>("DatabaseSettings:TimeoutSeconds", 180000);
+    }
+}
