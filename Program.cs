@@ -33,7 +33,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 {
     try
     {
-        var time = $"Entrada: {DateTime.Now}";
+        var time = $"Entrada: {DateTime.Now.ToString("HH:mm:ss")}";
 
         // Console.WriteLine($"Peticion/nav-soap: {time}");
         using var reader = new StreamReader(request.Body);
@@ -88,7 +88,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
         </soap:Envelope>
         """;
 
-        Console.WriteLine($"xml:{soapEnvelope}");
+        // Console.WriteLine($"xml:{soapEnvelope}");
 
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, json.serviceUrl ?? JsonConstants.ServiceUrl)
@@ -98,11 +98,11 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 
         httpRequest.Headers.Add("SOAPAction", $"\"{soapAction}\"");
 
-        // time += $" - Entrada SendAsync: {DateTime.Now}";
+        time += $" | SendAsync: {DateTime.Now.ToString("HH:mm:ss")}";
         var navResponse = await client.SendAsync(httpRequest);
-        // time += $" - Salida SendAsync: {DateTime.Now}";
+        time += $" | RespStatus: {(int)navResponse.StatusCode} {navResponse.StatusCode} {DateTime.Now.ToString("HH:mm:ss")}";
         var rawXml = await navResponse.Content.ReadAsStringAsync();
-        // time += $" - Salida ReadAsStringAsync: {DateTime.Now}";
+        time += $" | ReadBody: {DateTime.Now.ToString("HH:mm:ss")}";
 
 
         if (!navResponse.IsSuccessStatusCode)
@@ -112,7 +112,7 @@ app.MapPost("/nav-soap", async (HttpRequest request, [FromServices] IHttpClientF
 
         // Parsear la respuesta y extraer el resultado
         var result = ParseSoapResponse(rawXml, json.operation);
-        time += $" - Salida: {DateTime.Now}";
+        time += $" - Salida: {DateTime.Now.ToString("HH:mm:ss")}";
 
         Console.WriteLine($"{peticion}{time}");
 
@@ -147,6 +147,11 @@ app.MapPost("/retail-services/{operation}", async (
         var body = await reader.ReadToEndAsync();
 
         var json = System.Text.Json.JsonSerializer.Deserialize<RetailServiceRequest>(body);
+
+        if (json is null)
+        {
+            return Results.BadRequest("Invalid request body format");
+        }
 
         // Validar que la operación sea válida para RetailWebServices
         var validOperations = new[] {
@@ -185,17 +190,40 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
 {
     try
     {
-        Console.WriteLine(JsonConstants.ServiceUrl);
-        Console.WriteLine(JsonConstants.Usuario);
-        Console.WriteLine(JsonConstants.Password);
-        Console.WriteLine(JsonConstants.Dominio);
-        Console.WriteLine(JsonConstants.Timeout);
-        var time = DateTime.Now;
-        Console.WriteLine($"Peticion/nav-health: {time}");
+        Console.WriteLine("\n=== NAV HEALTH CHECK INICIADO ===");
+        Console.WriteLine($"Timestamp: {DateTime.Now.ToString("HH:mm:ss")}");
+        Console.WriteLine($"ServiceUrl: {JsonConstants.ServiceUrl}");
+        Console.WriteLine($"Usuario: {JsonConstants.Usuario}");
+        Console.WriteLine($"Password: {new string('*', JsonConstants.Password.Length)}");
+        Console.WriteLine($"Dominio: {JsonConstants.Dominio}");
+        Console.WriteLine($"Timeout: {JsonConstants.Timeout}");
+        
         using var reader = new StreamReader(request.Body);
         var body = await reader.ReadToEndAsync();
+        
+        Console.WriteLine($"Request Body Length: {body.Length} bytes");
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            Console.WriteLine($"Request Body: {body}");
+        }
+        else
+        {
+            Console.WriteLine("Request Body: [VACÍO - usando valores por defecto]");
+        }
 
         var json = System.Text.Json.JsonSerializer.Deserialize<NavHealthRequest>(body);
+
+        if (json is null)
+        {
+            Console.WriteLine("Deserialización falló o body vacío - usando valores por defecto");
+            json = new NavHealthRequest(
+                serviceUrl: JsonConstants.ServiceUrl,
+                usuario: JsonConstants.Usuario,
+                password: JsonConstants.Password,
+                dominio: JsonConstants.Dominio,
+                timeout: JsonConstants.Timeout
+            );
+        }
 
         var navRequest = new NavSoapRequest(
             serviceUrl: json.serviceUrl ?? JsonConstants.ServiceUrl,
@@ -207,11 +235,24 @@ app.MapPost("/nav-health", async (HttpRequest request, [FromServices] IHttpClien
             parameters: new Dictionary<string, string>()
         );
 
+        Console.WriteLine($"Llamando a NAV con:");
+        Console.WriteLine($"  - Usuario: {navRequest.usuario}");
+        Console.WriteLine($"  - Dominio: {navRequest.dominio}");
+        Console.WriteLine($"  - Operation: {navRequest.operation}");
+        
         var result = await CallNavSoapService(navRequest, factory);
+        
+        Console.WriteLine($"Respuesta exitosa recibida - {DateTime.Now.ToString("HH:mm:ss")}");
+        Console.WriteLine("=== FIN NAV HEALTH CHECK ===\n");
+        
         return result;
     }
     catch (Exception ex)
     {
+        Console.WriteLine($"\n!!! ERROR en nav-health !!!");
+        Console.WriteLine($"Error Message: {ex.Message}");
+        Console.WriteLine($"StackTrace: {ex.StackTrace}");
+        Console.WriteLine($"=== FIN NAV HEALTH CHECK (CON ERROR) ===\n");
         return Results.Problem($"Health check failed: {ex.Message}");
     }
 });
@@ -269,6 +310,13 @@ static object ParseSoapResponse(string soapXml, string operation)
 // Función auxiliar reutilizable para llamadas SOAP
 static async Task<IResult> CallNavSoapService(NavSoapRequest navRequest, IHttpClientFactory factory)
 {
+    Console.WriteLine($"\n--- Iniciando CallNavSoapService ---");
+    Console.WriteLine($"Operation: {navRequest.operation}");
+    Console.WriteLine($"URL: {navRequest.serviceUrl}");
+    Console.WriteLine($"Usuario: {navRequest.usuario}");
+    Console.WriteLine($"Dominio: {navRequest.dominio}");
+    Console.WriteLine($"Timestamp: {DateTime.Now.ToString("HH:mm:ss")}");
+    
     var handler = new HttpClientHandler
     {
         Credentials = new NetworkCredential(navRequest.usuario, navRequest.password, navRequest.dominio),
@@ -279,6 +327,8 @@ static async Task<IResult> CallNavSoapService(NavSoapRequest navRequest, IHttpCl
     {
         Timeout = TimeSpan.FromSeconds(6000)
     };
+    
+    Console.WriteLine("HttpClient y credenciales configurados");
 
     var parametersXml = new StringBuilder();
     foreach (var param in navRequest.parameters)
@@ -302,6 +352,8 @@ static async Task<IResult> CallNavSoapService(NavSoapRequest navRequest, IHttpCl
     </soap:Envelope>
     """;
 
+    Console.WriteLine($"SOAPAction: {soapAction}");
+
     var httpRequest = new HttpRequestMessage(HttpMethod.Post, navRequest.serviceUrl)
     {
         Content = new StringContent(soapEnvelope, Encoding.UTF8, "text/xml")
@@ -309,15 +361,26 @@ static async Task<IResult> CallNavSoapService(NavSoapRequest navRequest, IHttpCl
 
     httpRequest.Headers.Add("SOAPAction", $"\"{soapAction}\"");
 
+    Console.WriteLine($"Enviando request a NAV... {DateTime.Now.ToString("HH:mm:ss")}");
     var navResponse = await client.SendAsync(httpRequest);
+    Console.WriteLine($"Respuesta recibida - Status: {(int)navResponse.StatusCode} {navResponse.StatusCode} | {DateTime.Now.ToString("HH:mm:ss")}");
+    
     var rawXml = await navResponse.Content.ReadAsStringAsync();
+    Console.WriteLine($"Body length: {rawXml.Length} bytes");
 
     if (!navResponse.IsSuccessStatusCode)
     {
+        Console.WriteLine($"\n!!! ERROR de NAV Service !!!");
+        Console.WriteLine($"Status Code: {navResponse.StatusCode}");
+        Console.WriteLine($"Response: {rawXml}");
+        Console.WriteLine($"--- Fin CallNavSoapService (ERROR) ---\n");
         return Results.Problem($"Error from NAV service: {navResponse.StatusCode} - {rawXml}");
     }
 
+    Console.WriteLine($"Parseando respuesta SOAP...");
     var result = ParseSoapResponse(rawXml, navRequest.operation);
+    Console.WriteLine($"Respuesta parseada exitosamente");
+    Console.WriteLine($"--- Fin CallNavSoapService (ÉXITO) ---\n");
 
     return Results.Ok(new
     {
